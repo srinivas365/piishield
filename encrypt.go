@@ -230,3 +230,44 @@ func (h PIIHook) ReplacePIITags(data map[string]interface{}) map[string]interfac
 	fmt.Println(data)
 	return data
 }
+
+func Redact(v interface{}) map[string]interface{} {
+
+	// Use reflection to process the struct
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Ptr || val.IsNil() {
+		return nil
+	}
+	val = val.Elem()
+	if val.Kind() != reflect.Struct {
+		return nil
+	}
+
+	typ := val.Type()
+	personMap := make(map[string]interface{})
+
+	// Convert struct fields to map
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldType := typ.Field(i)
+
+		// Use json tag if available, otherwise use struct field name
+		jsonTag := fieldType.Tag.Get("json")
+		if jsonTag == "" {
+			jsonTag = fieldType.Name
+		}
+
+		personMap[jsonTag] = field.Interface()
+	}
+
+	// Replace PII fields with placeholder values
+	for key, value := range personMap {
+		if _, ok := value.(string); ok {
+			if placeholder, found := DefaultPIIMappings[key]; found {
+				personMap[key] = placeholder
+			}
+		}
+	}
+
+	return personMap
+}
