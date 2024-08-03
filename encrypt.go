@@ -231,8 +231,8 @@ func (h PIIHook) ReplacePIITags(data map[string]interface{}) map[string]interfac
 	return data
 }
 
-func Redact(v interface{}) map[string]interface{} {
-
+// Redact returns a new structure with PII fields replaced based on the `pii` tag.
+func Redact(v interface{}) interface{} {
 	// Use reflection to process the struct
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Ptr || val.IsNil() {
@@ -243,31 +243,49 @@ func Redact(v interface{}) map[string]interface{} {
 		return nil
 	}
 
+	// Create a new instance of the struct type
 	typ := val.Type()
-	personMap := make(map[string]interface{})
+	newVal := reflect.New(typ).Elem()
 
-	// Convert struct fields to map
+	// Iterate over struct fields
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
 
-		// Use json tag if available, otherwise use struct field name
-		jsonTag := fieldType.Tag.Get("json")
-		if jsonTag == "" {
-			jsonTag = fieldType.Name
+		// Handle nested structs recursively
+		if field.Kind() == reflect.Struct {
+			nested := Redact(field.Addr().Interface())
+			newVal.Field(i).Set(reflect.ValueOf(nested).Elem())
+			continue
 		}
 
-		personMap[jsonTag] = field.Interface()
-	}
-
-	// Replace PII fields with placeholder values
-	for key, value := range personMap {
-		if _, ok := value.(string); ok {
-			if placeholder, found := DefaultPIIMappings[key]; found {
-				personMap[key] = placeholder
+		// Handle slices of structs recursively
+		if field.Kind() == reflect.Slice {
+			sliceType := field.Type().Elem()
+			if sliceType.Kind() == reflect.Struct {
+				newSlice := reflect.MakeSlice(field.Type(), field.Len(), field.Cap())
+				for j := 0; j < field.Len(); j++ {
+					nested := Redact(field.Index(j).Addr().Interface())
+					newSlice.Index(j).Set(reflect.ValueOf(nested).Elem())
+				}
+				newVal.Field(i).Set(newSlice)
+				continue
 			}
 		}
+
+		// Check for `pii` tag and replace with placeholder if found
+		if piiTag := fieldType.Tag.Get("pii"); piiTag != "" {
+			if _, ok := field.Interface().(string); ok {
+				if placeholder, found := DefaultPIIMappings[piiTag]; found {
+					newVal.Field(i).SetString(placeholder)
+					continue
+				}
+			}
+		}
+
+		// Copy non-PII fields as is
+		newVal.Field(i).Set(field)
 	}
 
-	return personMap
+	return newVal.Addr().Interface()
 }
