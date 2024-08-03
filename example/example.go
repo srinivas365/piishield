@@ -27,6 +27,10 @@ type Patient struct {
 	PatientID     string `pii:"patient_id" json:"patient_id"`
 }
 
+type Hospital struct {
+	Patients []Patient
+}
+
 func main() {
 	person := &Person{
 		UserID:       "user@example.com",
@@ -60,6 +64,10 @@ func main() {
 		"srinivas365": *patient,
 	}
 
+	hospital := &Hospital{
+		Patients: patients,
+	}
+
 	fmt.Printf("Before: %+v\n\n", person)
 	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(person))
 	fmt.Printf("After: %+v\n\n", person)
@@ -79,5 +87,9 @@ func main() {
 	fmt.Printf("Before: %+v\n\n", patientMap)
 	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(patientMap))
 	fmt.Printf("After: %+v\n\n", patientMap)
+
+	fmt.Printf("Before: %+v\n\n", hospital)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(hospital))
+	fmt.Printf("After: %+v\n\n", hospital)
 
 }

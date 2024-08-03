@@ -1,11 +1,18 @@
 package piishield
 
 import (
+	"os"
 	"reflect"
 )
 
 // Redact returns a new instance of the struct with PII tags replaced for display purposes
 func Redact(v interface{}) interface{} {
+	// Check environment variable to determine if redaction is enabled
+	if os.Getenv("REDACT_PII") != "true" {
+		// If redaction is not enabled, return the original value
+		return v
+	}
+
 	val := reflect.ValueOf(v)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
