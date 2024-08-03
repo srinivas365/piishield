@@ -1,14 +1,7 @@
-package piiencrypt
+package piishield
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"os"
 	"reflect"
-
-	"github.com/rs/zerolog"
 )
 
 // DefaultPIIMappings provides default mappings for PII tags.
@@ -76,216 +69,53 @@ var DefaultPIIMappings = map[string]string{
 	"emergency_contact":      "<emergency_contact>",
 }
 
-func EncryptData(data string) string {
-	hash := sha256.New()
-	hash.Write([]byte(data))
-	return hex.EncodeToString(hash.Sum(nil))
-}
-
-// LoadPIITagMappings loads the PII tag mappings from a JSON file.
-func LoadPIITagMappings(path string) (map[string]string, error) {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var mappings map[string]string
-	err = json.Unmarshal(file, &mappings)
-	if err != nil {
-		return nil, err
-	}
-
-	return mappings, nil
-}
-
-func EncryptPIIFields(v interface{}, config ...map[string]bool) {
-	val := reflect.ValueOf(v).Elem()
-	typ := val.Type()
-
-	// Use defaultConfig if config is not provided
-	var useConfig map[string]bool
-	if len(config) > 0 && config[0] != nil {
-		useConfig = config[0]
-	} else {
-		useConfig = make(map[string]bool)
-	}
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := typ.Field(i)
-		piiTag := fieldType.Tag.Get("pii")
-
-		shouldEncrypt, configExists := useConfig[piiTag]
-		if piiTag != "" && (!configExists || shouldEncrypt) && field.CanSet() {
-			if field.Kind() == reflect.String {
-				field.SetString(EncryptData(field.String()))
-			}
-		}
-	}
-}
-
-// ReplacePIITags replaces PII data in the struct with placeholder tags based on the pii tags.
-func ReplacePIITags(v interface{}, mappingsPath ...string) error {
-	// Determine which mapping to use
-	var mappings map[string]string
-	if len(mappingsPath) > 0 && mappingsPath[0] != "" {
-		var err error
-		mappings, err = LoadPIITagMappings(mappingsPath[0])
-		if err != nil {
-			return err
-		}
-	} else {
-		// Use default mappings
-		mappings = DefaultPIIMappings
-	}
-
-	val := reflect.ValueOf(v).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := typ.Field(i)
-		piiTag := fieldType.Tag.Get("pii")
-
-		if piiTag != "" && field.CanSet() {
-			// Replace the field value with the placeholder tag if it is a string
-			if field.Kind() == reflect.String {
-				tag, found := mappings[piiTag]
-				if found {
-					field.SetString(tag)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// PIIHook is a custom zerolog hook for replacing PII data with placeholders.
-type PIIHook struct {
-	Mappings map[string]string
-}
-
-// With modifies the log event by replacing PII tags in the fields.
-func (h PIIHook) With(e *zerolog.Event) *zerolog.Event {
-	// We can't directly modify fields of the log event here; we need to modify the log entry at the time it's created.
-	return e
-}
-
-// Run adds the PII replacement logic to the log event.
-func (h PIIHook) Run(e *zerolog.Event, level zerolog.Level, message string) {
-	// Map to hold updated fields
-	updatedFields := make(map[string]interface{})
-
-	// Process each field
-	e.Fields(func(key string, value interface{}) {
-		if strValue, ok := value.(string); ok {
-			if placeholder, found := h.Mappings[strValue]; found {
-				updatedFields[key] = placeholder
-			} else {
-				updatedFields[key] = strValue
-			}
-		} else {
-			updatedFields[key] = value
-		}
-	})
-
-	// Clear original fields and add updated fields
-	e = e.Fields(nil)
-	for key, value := range updatedFields {
-		e.Interface(key, value)
-	}
-	e.Msg(message)
-}
-
-// NewPIIHook creates a new PIIHook with mappings loaded from the given path or defaults.
-func NewPIIHook(mappingsPath ...string) (PIIHook, error) {
-	var mappings map[string]string
-
-	if len(mappingsPath) > 0 && mappingsPath[0] != "" {
-		var err error
-		mappings, err = LoadPIITagMappings(mappingsPath[0])
-		if err != nil {
-			return PIIHook{}, err
-		}
-	} else {
-		mappings = DefaultPIIMappings
-	}
-
-	return PIIHook{Mappings: mappings}, nil
-}
-
-// ReplacePIITags replaces PII data in the struct with placeholder tags based on the pii tags.
-// ReplacePIITags replaces PII data in the log entry with placeholder tags based on the mappings.
-func (h PIIHook) ReplacePIITags(data map[string]interface{}) map[string]interface{} {
-	for key, value := range data {
-		if strValue, ok := value.(string); ok {
-			for tag, placeholder := range h.Mappings {
-				if strValue == tag {
-					data[key] = placeholder
-				}
-			}
-		}
-	}
-	fmt.Println(data)
-	return data
-}
-
-// Redact returns a new structure with PII fields replaced based on the `pii` tag.
+// Redact returns a new instance of the struct with PII tags replaced for display purposes
 func Redact(v interface{}) interface{} {
-	// Use reflection to process the struct
 	val := reflect.ValueOf(v)
-	if val.Kind() != reflect.Ptr || val.IsNil() {
-		return nil
-	}
-	val = val.Elem()
-	if val.Kind() != reflect.Struct {
-		return nil
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
 	}
 
-	// Create a new instance of the struct type
+	return redactValue(val)
+}
+
+// redactValue recursively redacts values in structs, maps, slices, and arrays
+func redactValue(val reflect.Value) interface{} {
+	switch val.Kind() {
+	case reflect.Struct:
+		return redactStruct(val)
+	case reflect.Map:
+		redactedMap := reflect.MakeMap(val.Type())
+		for _, key := range val.MapKeys() {
+			redactedMap.SetMapIndex(key, reflect.ValueOf(redactValue(val.MapIndex(key))))
+		}
+		return redactedMap.Interface()
+	case reflect.Slice, reflect.Array:
+		redactedSlice := reflect.MakeSlice(val.Type(), val.Len(), val.Cap())
+		for i := 0; i < val.Len(); i++ {
+			redactedSlice.Index(i).Set(reflect.ValueOf(redactValue(val.Index(i))))
+		}
+		return redactedSlice.Interface()
+	default:
+		return val.Interface()
+	}
+}
+
+// redactStruct redacts fields in a struct
+func redactStruct(val reflect.Value) interface{} {
 	typ := val.Type()
-	newVal := reflect.New(typ).Elem()
+	redacted := reflect.New(typ).Elem()
 
-	// Iterate over struct fields
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
 
-		// Handle nested structs recursively
-		if field.Kind() == reflect.Struct {
-			nested := Redact(field.Addr().Interface())
-			newVal.Field(i).Set(reflect.ValueOf(nested).Elem())
-			continue
+		if placeholder, found := DefaultPIIMappings[fieldType.Tag.Get("pii")]; found {
+			redacted.Field(i).SetString(placeholder)
+		} else {
+			redacted.Field(i).Set(reflect.ValueOf(redactValue(field)))
 		}
-
-		// Handle slices of structs recursively
-		if field.Kind() == reflect.Slice {
-			sliceType := field.Type().Elem()
-			if sliceType.Kind() == reflect.Struct {
-				newSlice := reflect.MakeSlice(field.Type(), field.Len(), field.Cap())
-				for j := 0; j < field.Len(); j++ {
-					nested := Redact(field.Index(j).Addr().Interface())
-					newSlice.Index(j).Set(reflect.ValueOf(nested).Elem())
-				}
-				newVal.Field(i).Set(newSlice)
-				continue
-			}
-		}
-
-		// Check for `pii` tag and replace with placeholder if found
-		if piiTag := fieldType.Tag.Get("pii"); piiTag != "" {
-			if _, ok := field.Interface().(string); ok {
-				if placeholder, found := DefaultPIIMappings[piiTag]; found {
-					newVal.Field(i).SetString(placeholder)
-					continue
-				}
-			}
-		}
-
-		// Copy non-PII fields as is
-		newVal.Field(i).Set(field)
 	}
 
-	return newVal.Addr().Interface()
+	return redacted.Interface()
 }

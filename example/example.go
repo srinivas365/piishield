@@ -2,9 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
 
-	"github.com/srinivas365/piiencrypt" // Replace with your actual module path
+	pii "github.com/srinivas365/piishield"
 )
 
 type Person struct {
@@ -23,13 +22,12 @@ type Person struct {
 	Pincode      int    `json:"pincode"`                           // Not PII but included for completeness
 }
 
-func main() {
-	// Create a PIIHook and handle any errors
-	_, err := piiencrypt.NewPIIHook()
-	if err != nil {
-		log.Fatal("Error creating PIIHook", err)
-	}
+type Patient struct {
+	PersonDetails Person
+	PatientID     string `pii:"patient_id" json:"patient_id"`
+}
 
+func main() {
 	person := &Person{
 		UserID:       "user@example.com",
 		Fullname:     "John Doe",
@@ -46,21 +44,40 @@ func main() {
 		Pincode:      1234,
 	}
 
-	// Replace PII fields with placeholder tags using default mappings
-	err = piiencrypt.ReplacePIITags(person)
-	if err != nil {
-		log.Fatalf("Error replacing PII tags: %v", err)
+	patient := &Patient{
+		PersonDetails: *person,
+		PatientID:     "19324924",
 	}
 
-	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v", person)
+	var persons []Person
+	persons = append(persons, *person)
 
-	// Optionally, use a custom mapping file
-	err = piiencrypt.ReplacePIITags(person, "pii_tags.json")
-	if err != nil {
-		log.Fatalf("Error replacing PII tags with custom mappings: %v", err)
+	var patients []Patient
+	patients = append(patients, *patient)
+
+	var patientMap = make(map[string]Patient)
+	patientMap = map[string]Patient{
+		"srinivas365": *patient,
 	}
 
-	fmt.Printf("After Replacing PII Tags (Custom Mappings): %+v\n\n", person)
+	fmt.Printf("Before: %+v\n\n", person)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(person))
+	fmt.Printf("After: %+v\n\n", person)
 
-	fmt.Println(person)
+	fmt.Printf("Before: %+v\n\n", patient)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(patient))
+	fmt.Printf("After: %+v\n\n", patient)
+
+	fmt.Printf("Before: %+v\n\n", persons)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(persons))
+	fmt.Printf("After: %+v\n\n", persons)
+
+	fmt.Printf("Before: %+v\n\n", patients)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(patients))
+	fmt.Printf("After: %+v\n\n", patients)
+
+	fmt.Printf("Before: %+v\n\n", patientMap)
+	fmt.Printf("After Replacing PII Tags (Default Mappings): %+v\n\n", pii.Redact(patientMap))
+	fmt.Printf("After: %+v\n\n", patientMap)
+
 }

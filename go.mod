@@ -1,4 +1,4 @@
-module github.com/srinivas365/piiencrypt
+module github.com/srinivas365/piishield
 
 go 1.20
 
