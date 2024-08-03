@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	pii "github.com/srinivas365/piishield"
 )
@@ -32,6 +33,8 @@ type Hospital struct {
 }
 
 func main() {
+	os.Setenv("REDACT_PII", "true")
+
 	person := &Person{
 		UserID:       "user@example.com",
 		Fullname:     "John Doe",

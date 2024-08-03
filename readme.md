@@ -60,6 +60,9 @@ type Patient struct {
 }
 
 func main() {
+	// set this env variable to redact the data
+	os.Setenv("REDACT_PII", "true")
+
 	person := &Person{
 		UserID:       "user@example.com",
 		Fullname:     "John Doe",
